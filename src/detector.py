@@ -56,7 +56,9 @@ class ObjectDetector(object):
         rospy.init_node('detector', anonymous=False)
 
         # double check these topics ...
-        rospy.Subscriber("/camera/rgb/image_raw", Image, self.run_inference_for_single_image,
+        #rospy.Subscriber("/camera/rgb/image_raw", Image, self.run_inference_for_single_image,
+        #                 queue_size=1, buff_size=2**24)
+        rospy.Subscriber("/camera/rgb/image_raw", Image, test_callback,
                          queue_size=1, buff_size=2**24)
 
         
@@ -73,8 +75,9 @@ class ObjectDetector(object):
         download_base = 'http://download.tensorflow.org/models/object_detection/'
         model_file = 'ssd_mobilenet_v1_coco_2017_11_17.tar.gz'
         model_path = os.path.join(SRC_DIR, 'models', model_file)
-	
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+
+        if not os.path.exists(os.path.dirname(model_path)):
+            os.makedirs(os.path.dirname(model_path))
 
         opener = urllib.request.URLopener()
         opener.retrieve(download_base + model_file, model_path)
@@ -222,6 +225,11 @@ class ObjectDetector(object):
         #output_dict['detection_masks'] = output_dict['detection_masks'][0]
 
         return output_dict
+
+    def test_cb(self, data):
+        """Just a test callback ...
+        """
+        print 'Here!'
 
 
 if __name__ == '__main__':

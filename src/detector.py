@@ -44,13 +44,7 @@ class ObjectDetector(object):
 
     def __init__(self):
 
-        rospy.init_node('detector', anonymous=False)
-
-        # double check these topics ...
-        rospy.Subscriber("image", Image, self.run_inference_for_single_image,
-                         queue_size=1, buff_size=2**24)
-
-        # tensorflow model
+	# tensorflow model
         self.detection_graph = self._init_detection_network()
         self.tensor_dict = self._init_tensor_handles()
         self.label_map = self._load_labels()
@@ -58,6 +52,14 @@ class ObjectDetector(object):
 
         # opencv interface
         self.bridge = CvBridge()
+
+        rospy.init_node('detector', anonymous=False)
+
+        # double check these topics ...
+        rospy.Subscriber("/camera/rgb/image_raw", Image, self.run_inference_for_single_image,
+                         queue_size=1, buff_size=2**24)
+
+        
 
     def _download_and_extract_model(self):
         """Downloads and extracts object detection pretrained model.
@@ -71,6 +73,8 @@ class ObjectDetector(object):
         download_base = 'http://download.tensorflow.org/models/object_detection/'
         model_file = 'ssd_mobilenet_v1_coco_2017_11_17.tar.gz'
         model_path = os.path.join(SRC_DIR, 'models', model_file)
+	
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
 
         opener = urllib.request.URLopener()
         opener.retrieve(download_base + model_file, model_path)

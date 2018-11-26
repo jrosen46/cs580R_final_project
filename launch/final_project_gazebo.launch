@@ -1,0 +1,20 @@
+<launch>
+
+    <!-- Launch base bringup-->
+    <include file="$(find turtlebot_gazebo)/launch/turtlebot_world.launch"/>
+
+    <!-- Launch amcl -->
+    <include file="$(find turtlebot_gazebo)/launch/amcl_demo.launch">
+        <arg name="map_file" value="$(find RosenbergJ)/maps/my_map.yaml"/>
+    </include>
+
+    <!-- Launch rviz -->
+    <include file="$(find turtlebot_rviz_launchers)/launch/view_navigation.launch"/>
+
+    <!-- Launch pocketsphinx recognizer -->
+    <include file="$(find RosenbergJ)/launch/pocketsphinx.launch"/>
+
+    <!-- Launch node to move turtlebot -->
+    <node pkg="RosenbergJ" type="movement.py" name="movement" output="screen"/>
+
+</launch>

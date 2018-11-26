@@ -1,0 +1,31 @@
+<launch>
+
+    <!-- Launch base bringup-->
+    <include file="$(find turtlebot_bringup)/launch/minimal.launch">
+        <arg name="output" value="screen"/>
+    </include>
+
+    <!-- Launch RGB camera -->
+    <include file="$(find final_project)/launch/usb_cam-test.launch">
+        <arg name="output" value="screen"/>
+    </include>
+
+    <!-- Launch Depth camera -->
+    <include file="$(find astra_launch)/launch/astra.launch">
+        <arg name="output" value="screen"/>
+    </include>
+
+    
+    
+    <!-- Launch rviz -->
+    <include file="$(find turtlebot_rviz_launchers)/launch/view_navigation.launch"/>
+
+    <!-- Launch Gmapping -->
+    <include file="$(find turtlebot_navigation)/launch/gmapping_demo.launch"/>
+
+    
+
+    <!-- Launch node to move turtlebot -->
+    <node pkg="final_project" type="detector.py" name="detector" output="screen"/>
+
+</launch>

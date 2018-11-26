@@ -3,8 +3,14 @@
 > ./test_images is just temporary for now ... just wanted to make sure that the
 object detection API was working properly.
 
-TODO
-----
-This currently works on my machine, but we need to figure out a way
-to make it portable ... there are a few packages that are required
-to make it work.
+Installion Requirements (this list is incomplete)
+-------------------------------------------------
+
+> tensorflow
+* follow tensorflow installation instructions for python2.7 on website
+
+> command for downloading opencv
+`sudo apt-get install ros-kinetic-vision-opencv libopencv-dev python-opencv`
+
+> command for cv_bridge (I think this is correct ... need to double check it)
+`sudo apt-get install ros-kinetic-cv-bridge

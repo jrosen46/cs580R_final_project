@@ -24,6 +24,7 @@ import numpy as np
 import tensorflow as tf
 import rospy
 from sensor_msgs.msg import Image
+import cv2
 from cv_bridge import CvBridge, CvBridgeError
 
 from object_detection.utils import ops as utils_ops
@@ -55,14 +56,9 @@ class ObjectDetector(object):
 
         rospy.init_node('detector', anonymous=False)
 
-        # double check these topics ...
-        #rospy.Subscriber("/camera/rgb/image_raw", Image, self.run_inference_for_single_image,
-        #                 queue_size=1, buff_size=2**24)
-        rospy.Subscriber("/camera/rgb/image_raw", Image, test_callback,
+        rospy.Subscriber("/camera/rgb/image_raw", Image, self.run_inference_for_single_image,
                          queue_size=1, buff_size=2**24)
-
         
-
     def _download_and_extract_model(self):
         """Downloads and extracts object detection pretrained model.
 
@@ -76,6 +72,8 @@ class ObjectDetector(object):
         model_file = 'ssd_mobilenet_v1_coco_2017_11_17.tar.gz'
         model_path = os.path.join(SRC_DIR, 'models', model_file)
 
+        # need to check if exists first b/c `exist_ok` arg does not exist
+        # for `makedirs` in python2.7
         if not os.path.exists(os.path.dirname(model_path)):
             os.makedirs(os.path.dirname(model_path))
 
@@ -89,8 +87,7 @@ class ObjectDetector(object):
 
         # Path to frozen detection graph. This is the actual model that is used for
         # the object detection.
-        frozen_graph_path = os.path.join(SRC_DIR,
-                                         'models',
+        frozen_graph_path = os.path.join(SRC_DIR, 'models',
                                          model_file.partition('.')[0],
                                          'frozen_inference_graph.pb')
         return frozen_graph_path
@@ -199,16 +196,17 @@ class ObjectDetector(object):
         assert hasattr(self, 'detection_graph')
         return tf.Session(graph=self.detection_graph)
 
-    def convert_to_np_array(self):
+    def _convert_to_np_array(self, data):
         """
         """
         cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
         image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
         return np.asarray(image)
 
-    def run_inference_for_single_image(self, image_np):
+    def run_inference_for_single_image(self, data):
         """
         """
+        image_np = self._convert_to_np_array(data)
         image_tensor = self.detection_graph.get_tensor_by_name('image_tensor:0')
 
         # Run inference
@@ -224,16 +222,19 @@ class ObjectDetector(object):
         output_dict['detection_scores'] = output_dict['detection_scores'][0]
         #output_dict['detection_masks'] = output_dict['detection_masks'][0]
 
-        return output_dict
+        # TODO: need to process the results here ... maybe publish them to a
+        #       topic so that another node could worry about the logic of what
+        #       to do with the information?
 
-    def test_cb(self, data):
-        """Just a test callback ...
-        """
-        print 'Here!'
+        # TODO: take this print statement out ... just a placeholder for now
+        print str(output_dict)
+
+        return output_dict
 
 
 if __name__ == '__main__':
     try:
         detector = ObjectDetector()
+        rospy.spin()
     except rospy.ROSInterruptException:
         pass

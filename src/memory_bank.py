@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-memory_network.py
+memory_bank.py
 
 """
 

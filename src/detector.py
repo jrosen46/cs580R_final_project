@@ -1,15 +1,13 @@
 #!/usr/bin/env python
 
 """
-test_object_detection.py
+detector.py
 
 This object detection uses the Tensorflow Object Detection API located at:
 https://github.com/tensorflow/models/tree/master/research/object_detection
 
 Some ideas were inspired by the following repositories:
-    https://github.com/osrf/tensorflow_object_detector
-
-
+    > https://github.com/osrf/tensorflow_object_detector
 
 TODO
 ----
@@ -221,7 +219,7 @@ class ObjectDetector(object):
         # change name of feature vector to make it more readable
         tensor_dict['feature_vector'] = tensor_dict.pop(
             'FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_1_Conv2d_4_1x1_'
-             '128/Relu6')
+            '128/Relu6')
 
         return tensor_dict
 

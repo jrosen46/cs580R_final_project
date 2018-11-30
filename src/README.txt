@@ -14,3 +14,5 @@ Installion Requirements (this list is incomplete)
 
 > command for cv_bridge (I think this is correct ... need to double check it)
 `sudo apt-get install ros-kinetic-cv-bridge
+
+> need to install vision_msgs: https://github.com/Kukanani/vision_msgs

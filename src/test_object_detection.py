@@ -62,7 +62,11 @@ def run_inference_for_single_image(image_np, graph):
     with graph.as_default():
         with tf.Session() as sess:
             # Get handles to input and output tensors
+            #print(tf.contrib.graph_editor.get_tensors(tf.get_default_graph()))
             ops = tf.get_default_graph().get_operations()
+            for op in ops:
+                for output in op.outputs:
+                    print "name: " + str(output) + "shape: " + str(output.shape)
             all_tensor_names = {output.name for op in ops for output in op.outputs}
             tensor_dict = {}
             for key in ['num_detections', 'detection_boxes', 'detection_scores',
@@ -125,7 +129,8 @@ def download_and_extract_model():
     """
     # Model to download ... look at model zoo for other options.
     download_base = 'http://download.tensorflow.org/models/object_detection/'
-    model_file = 'ssd_mobilenet_v1_coco_2017_11_17.tar.gz'
+    #model_file = 'ssd_mobilenet_v1_coco_2017_11_17.tar.gz'
+    model_file = 'faster_rcnn_inception_resnet_v2_atrous_lowproposals_oid_2018_01_28.tar.gz'
     model_path = os.path.join(SRC_DIR, model_file)
 
     opener = urllib.request.URLopener()

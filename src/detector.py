@@ -9,6 +9,35 @@ https://github.com/tensorflow/models/tree/master/research/object_detection
 Some ideas were inspired by the following repositories:
     https://github.com/osrf/tensorflow_object_detector
 
+
+
+TODO
+----
+> Need to figure out which feature vectors to use.
+
+Feature vectors taken from the following network architecture:
+
+ssd_mobilenet_v1 --> trained on COCO
+
+Here are some options for ssd mobilenet:
+    name:
+    Tensor("FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_1_Conv2d_2_1x1_256/Relu6:0",
+    shape=(?, 10, 10, 256), dtype=float32)
+
+    name:
+    Tensor("FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_1_Conv2d_3_1x1_128/Relu6:0",
+    shape=(?, 5, 5, 128), dtype=float32)
+
+    name:
+    Tensor("FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_1_Conv2d_4_1x1_128/Relu6:0",
+    shape=(?, 3, 3, 128), dtype=float32)
+
+Here are some options for faster rcnn inception resnet v2 atrous low proposals:
+    ... should we not even worry about this? This detection network takes a
+    very long time, and since we just need feature vectors, it will probably
+    work decently with any net ...
+
+
 """
 import os
 import six.moves.urllib as urllib
@@ -23,7 +52,10 @@ import time
 import numpy as np
 import tensorflow as tf
 import rospy
+from rospy_tutorials.msg import Floats
+from rospy.numpy_msg import numpy_msg
 from sensor_msgs.msg import Image
+from vision_msgs.msg import Detection2D
 import cv2
 from cv_bridge import CvBridge, CvBridgeError
 
@@ -42,6 +74,7 @@ SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class ObjectDetector(object):
+    """Object detection node."""
 
     def __init__(self):
 
@@ -56,8 +89,16 @@ class ObjectDetector(object):
 
         rospy.init_node('detector', anonymous=False)
 
-        rospy.Subscriber("/camera/rgb/image_raw", Image, self.run_inference_for_single_image,
+        rospy.Subscriber('/camera/rgb/image_raw', Image,
+                         self.run_inference_for_single_image,
                          queue_size=1, buff_size=2**24)
+
+        # TODO: Need to determine the topics that we are going to send this
+        # information too ... also need to decide on the format of the messages.
+        #self.obj_detec_pub = rospy.Publisher('', String, queue_size=10)
+        self.feat_vec_pub = rospy.Publisher('feature_vectors',
+                                            numpy_msg(Floats),
+                                            queue_size=10)
         
     def _download_and_extract_model(self):
         """Downloads and extracts object detection pretrained model.
@@ -70,6 +111,8 @@ class ObjectDetector(object):
         # Model to download ... look at model zoo for other options.
         download_base = 'http://download.tensorflow.org/models/object_detection/'
         model_file = 'ssd_mobilenet_v1_coco_2017_11_17.tar.gz'
+        #model_file = ('faster_rcnn_inception_resnet_v2_atrous_lowproposals'
+        #              '_oid_2018_01_28.tar.gz')
         model_path = os.path.join(SRC_DIR, 'models', model_file)
 
         # need to check if exists first b/c `exist_ok` arg does not exist
@@ -163,13 +206,22 @@ class ObjectDetector(object):
 
         # Get handles to tensors
         tensor_names = [
-            'num_detections', 'detection_boxes', 'detection_scores',
-            'detection_classes'
+            'num_detections',
+            'detection_boxes',
+            'detection_scores',
+            'detection_classes',
+            ('FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_1_Conv2d_4_1x1_'
+             '128/Relu6'),  # ssd net; need to change for other network
         ]
         tensor_dict = {
             name: self.detection_graph.get_tensor_by_name(name + ':0')
             for name in tensor_names
         }
+
+        # change name of feature vector to make it more readable
+        tensor_dict['feature_vector'] = tensor_dict.pop(
+            'FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_1_Conv2d_4_1x1_'
+             '128/Relu6')
 
         return tensor_dict
 
@@ -220,6 +272,8 @@ class ObjectDetector(object):
                                             .astype(np.uint8))
         output_dict['detection_boxes'] = output_dict['detection_boxes'][0]
         output_dict['detection_scores'] = output_dict['detection_scores'][0]
+        output_dict['feature_vector'] = (output_dict['feature_vector'][0]
+                                         .flatten())
         #output_dict['detection_masks'] = output_dict['detection_masks'][0]
 
         # TODO: need to process the results here ... maybe publish them to a

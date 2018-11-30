@@ -37,6 +37,9 @@ Here are some options for faster rcnn inception resnet v2 atrous low proposals:
     work decently with any net ...
 
 
+I think we need to use a higher level feature detector ... very hard to distinguish
+using ssd_mobilenet_v1 with this level.
+
 > We need some way to get the real world coordinates of object ... try and use some of the
   ideas from here ...
 https://github.com/cagbal/ros_people_object_detection_tensorflow/blob/master/src/projection.py
@@ -95,6 +98,12 @@ class ObjectDetector(object):
         rospy.Subscriber('/camera/rgb/image_raw', Image,
                          self.run_inference_for_single_image,
                          queue_size=1, buff_size=2**24)
+
+        # need to figure this callback out to process the depth frame too ...
+        rospy.Subscriber('/camera/depth/image_raw', Image,
+                         self.process_depth_frame,
+                         queue_size=1, buff_size=2**24)
+
 
         # TODO: Need to determine the topics that we are going to send this
         # information too ... also need to decide on the format of the messages.
@@ -293,15 +302,18 @@ class ObjectDetector(object):
         # TODO: need to process the results here ... maybe publish them to a
         #       topic so that another node could worry about the logic of what
         #       to do with the information?
-        for k, v in output_dict.items():
-            print k + ": " + str(type(v))
-
-
 
         # TODO: take this print statement out ... just a placeholder for now
         print str(output_dict)
 
+        self.feat_vec_pub.publish(output_dict['feature_vector'])
+
+
         return output_dict
+
+    def process_depth_frame(self, data):
+        # do we need to use opencv here?
+        pass
 
 
 if __name__ == '__main__':

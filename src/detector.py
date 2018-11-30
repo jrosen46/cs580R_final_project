@@ -8,6 +8,7 @@ https://github.com/tensorflow/models/tree/master/research/object_detection
 
 Some ideas were inspired by the following repositories:
     > https://github.com/osrf/tensorflow_object_detector
+    > https://github.com/cagbal/ros_people_object_detection_tensorflow
 
 TODO
 ----
@@ -35,6 +36,10 @@ Here are some options for faster rcnn inception resnet v2 atrous low proposals:
     very long time, and since we just need feature vectors, it will probably
     work decently with any net ...
 
+
+> We need some way to get the real world coordinates of object ... try and use some of the
+  ideas from here ...
+https://github.com/cagbal/ros_people_object_detection_tensorflow/blob/master/src/projection.py
 
 """
 import os
@@ -97,7 +102,7 @@ class ObjectDetector(object):
         self.feat_vec_pub = rospy.Publisher('feature_vectors',
                                             numpy_msg(Floats),
                                             queue_size=10)
-        
+
     def _download_and_extract_model(self):
         """Downloads and extracts object detection pretrained model.
 
@@ -132,7 +137,7 @@ class ObjectDetector(object):
                                          model_file.partition('.')[0],
                                          'frozen_inference_graph.pb')
         return frozen_graph_path
-    
+
     def _load_frozen_graph(self, frozen_graph_path):
         """Loads frozen graph into memory.
 
@@ -255,6 +260,16 @@ class ObjectDetector(object):
 
     def run_inference_for_single_image(self, data):
         """
+
+        Format of `output_dict`:
+            'detection_classes': np.array with 100 uint8, contains class ids
+            'detection_boxes': np.array with shape (100, 4);
+                               ymin, xmin, ymax, xmax
+            'detection_scores': confidence of object with corresponding id in
+                                'detection classes'
+            'num_detections': int ... will always be 100 for ssd_mobilenet_v1
+            'feature_vector': np.array float32
+
         """
         image_np = self._convert_to_np_array(data)
         image_tensor = self.detection_graph.get_tensor_by_name('image_tensor:0')
@@ -274,9 +289,14 @@ class ObjectDetector(object):
                                          .flatten())
         #output_dict['detection_masks'] = output_dict['detection_masks'][0]
 
+
         # TODO: need to process the results here ... maybe publish them to a
         #       topic so that another node could worry about the logic of what
         #       to do with the information?
+        for k, v in output_dict.items():
+            print k + ": " + str(type(v))
+
+
 
         # TODO: take this print statement out ... just a placeholder for now
         print str(output_dict)

@@ -31,6 +31,10 @@ Here are some options for ssd mobilenet:
     Tensor("FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_1_Conv2d_4_1x1_128/Relu6:0",
     shape=(?, 3, 3, 128), dtype=float32)
 
+    name:
+    Tensor("FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_2_Conv2d_5_3x3_s2_128/Relu6:0",
+    shape=(?, 1, 1, 128), dtype=float32)
+
 Here are some options for faster rcnn inception resnet v2 atrous low proposals:
     ... should we not even worry about this? This detection network takes a
     very long time, and since we just need feature vectors, it will probably
@@ -80,8 +84,19 @@ SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class ObjectDetector(object):
-    """Object detection node."""
+    """Object detection node.
+    
+    Published Topics
+    ----------------
+    '/processed_detections'
+    '/feature_vectors'
 
+    Subscribed Topics
+    -----------------
+    '/camera/depth/image_raw'
+    '/camera/rgb/image_raw'
+    
+    """
     def __init__(self):
 
         # tensorflow model
@@ -106,8 +121,8 @@ class ObjectDetector(object):
                          self.run_inference_for_single_image,
                          queue_size=1, buff_size=2**24)
 
-        # TODO: Need to determine the topics that we are going to send this
-        # information too ... also need to decide on the format of the messages.
+        # TODO: Whichever node receives this message needs to reshape it as
+        #       follows: np_array.reshape(-1, 4).
         self.obj_detect_pub = rospy.Publisher('processed_detections',
                                               numpy_msg(Floats),
                                               queue_size=10)
@@ -200,8 +215,8 @@ class ObjectDetector(object):
             'detection_boxes',
             'detection_scores',
             'detection_classes',
-            ('FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_1_Conv2d_4_1x1_'
-             '128/Relu6'),  # ssd net; need to change for other network
+            ('FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_2_Conv2d_5_3x3_'
+             's2_128/Relu6'),  # ssd net; need to change for other network
         ]
         tensor_dict = {
             name: self.detection_graph.get_tensor_by_name(name + ':0')
@@ -209,9 +224,9 @@ class ObjectDetector(object):
         }
 
         # change name of feature vector to make it more readable
-        tensor_dict['feature_vector'] = tensor_dict.pop(
-            'FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_1_Conv2d_4_1x1_'
-            '128/Relu6')
+        tensor_dict['feature_vectors'] = tensor_dict.pop(
+            'FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_2_Conv2d_5_3x3_'
+            's2_128/Relu6')
 
         return tensor_dict
 
@@ -246,22 +261,37 @@ class ObjectDetector(object):
 
     def _convert_depth_to_np_array(self, data):
         """Converts depth sensor_msgs/Image data to numpy array."""
-        # TODO: do all of these work correctly?
+
+        # TODO: Do all of these work correctly?
         cv_image = self.bridge.imgmsg_to_cv2(data, "32FC1")
         #cv_image = self.bridge.imgmsg_to_cv2(data, "passthrough")
         #cv_image = self.bridge.imgmsg_to_cv2(data)
         return np.asarray(cv_image)
 
     def run_inference_for_single_image(self, data):
-        """
-        Format of `output_dict`:
-            'detection_classes': np.array with 100 uint8, contains class ids
-            'detection_boxes': np.array with shape (100, 4);
-                               ymin, xmin, ymax, xmax
-            'detection_scores': confidence of object with corresponding id in
-                                'detection classes'
-            'num_detections': int ... will always be 100 for ssd_mobilenet_v1
-            'feature_vector': np.array float32
+        """Run object detection for incoming image.
+
+        Callback for the rospy.Subscriber('/camera/rgb/image_raw')
+
+        Decscription of information returned from network:
+
+        num_detections : int
+            Number of returned detections. Will always be 100 for
+            ssd_mobilenet_v1.
+        detection_classes : numpy.ndarray
+            Contains class ids for detected objects. Will have
+            shape=(`num_detections`, ).
+        detection_boxes : numpy.ndarray
+            Contains 4 coordinates of bounding box for each object in
+            `detection_classes`. Coordinates are in the order: ymin, xmin,
+            ymax, xmax. Coordinates are normalized b/t 0.0 and 1.0.  Has
+            shape=(`num_detections`, 4).
+        detection_scores : numpy.ndarray
+            Confidence of classification for each object in `detection_classes`.
+            Has shape=(`num_detections`, ).
+        'feature_vectors': np.array
+            Contains abstract representation of scene. Just a feature vector
+            taken from a higher layer in the network.
 
         """
         image_np = self._convert_rgb_to_np_array(data)
@@ -282,27 +312,23 @@ class ObjectDetector(object):
                                             .astype(np.uint8))
         output_dict['detection_boxes'] = output_dict['detection_boxes'][0]
         output_dict['detection_scores'] = output_dict['detection_scores'][0]
-        output_dict['feature_vector'] = (output_dict['feature_vector'][0]
+        output_dict['feature_vectors'] = (output_dict['feature_vectors'][0]
                                          .flatten())
-         
-        # TODO: need more logic here that is going to connect with             
 
-        ###############################################################
-        # TODO: figure out when to publish the processed detections
-        processed_detections = self.process_detections(
-            width, height, depth_frame_np, **output_dict)
-        self.obj_detect_pub.publish(processed_detections)
-        ###############################################################
-
-        ###############################################################
-        # TODO: figure out when to publish the feature vectors
-        feature_vectors = output_dict.pop('feature_vector')
+        # publish feature vectors
+        feature_vectors = output_dict.pop('feature_vectors')
         self.feat_vec_pub.publish(feature_vectors)
-        ###############################################################
+
+        # publish information summary from detection network
+        # TODO: Either figure out how to send multi dimensional numpy
+        #       arrays or just reshape upon send/receive of this topic.
+        processed_detections = self.process_detections(depth_frame_np, width,
+                                                       height, **output_dict)
+        if processed_detections is not None: 
+            self.obj_detect_pub.publish(processed_detections.flatten())
 
 
-        
-    def process_detections(self, width, height, depth_frame_np, num_detections,
+    def process_detections(self, depth_frame_np, width, height, num_detections,
                            detection_classes, detection_boxes,
                            detection_scores):
         """Process information obtained from object detection network.
@@ -318,35 +344,46 @@ class ObjectDetector(object):
 
         Parameters
         ----------
+        depth_frame_np : numpy.ndarray
+            Numpy frame of depth image.
         width : int
-            The width (in pixels) of RGB image taken by astra camera.
+            The width (in pixels) of RGB/Depth images taken by astra camera.
         height : int
-            The height (in pixels) of RGB image taken by astra camera.
-        depth_frame_np :
-        num_detections :
-        detection_classes :
-        detection_boxes :
-        detection_scores :
+            The height (in pixels) of RGB/Depth images taken by astra camera.
+        num_detections : int
+            Number of returned detections. Will always be 100 for
+            ssd_mobilenet_v1.
+        detection_classes : numpy.ndarray w/ dtype=uint8
+            Contains class ids for detected objects. Will have
+            shape=(`num_detections`, ).
+        detection_boxes : numpy.ndarray w/ dtype float
+            Contains 4 coordinates of bounding box for each object in
+            `detection_classes`. Coordinates are in the order: ymin, xmin,
+            ymax, xmax. Coordinates are normalized b/t 0.0 and 1.0.  Has
+            shape=(`num_detections`, 4).
+        detection_scores : numpy.ndarray w/ dtype float
+            Confidence of classification for each object in `detection_classes`.
+            Has shape=(`num_detections`, ).
 
         Returns
         -------
-        numpy.array of shape ()
-            Will contain the object id, the center x coordinate, and the center-y
-            coordinate.
+        numpy.ndarray w/ dtype np.float32
+            Has shape (# of confident detections, 4). By 'confident', we mean
+            the number of detections we deem to be confident enough to
+            consider.  Will contain the object id, the normalized center x
+            coordinate, the normalized center y coordinate, and the approximate
+            depth of the object in meters.  If detection network was not
+            confident about any object, then returns None.
         """
-        # TODO: Check to see if no objects are above confidence ... do not publish
-        #       if this is the case.
-
         # trim to only consider boxes with high confidence
-        #tr_scores = detection_scores[detection_scores > .80]
-        #tr_num = tr_scores.shape[0]
-        #tr_classes = detection_classes[:tr_num]
-        #tr_boxes = detection_boxes[:tr_num, :]
-
-        tr_scores = detection_scores
+        tr_scores = detection_scores[detection_scores > .80]
         tr_num = tr_scores.shape[0]
-        tr_classes = detection_classes
-        tr_boxes = detection_boxes
+        tr_classes = detection_classes[:tr_num]
+        tr_boxes = detection_boxes[:tr_num, :]
+
+        # if nothing confident exists, return None
+        if tr_num == 0:
+            return None
 
         # trim to only consider most confident object from each class
         uq, idx = np.unique(tr_classes, return_index=True)
@@ -355,16 +392,19 @@ class ObjectDetector(object):
         tr_scores = tr_scores[idx]
         tr_classes = tr_classes[idx]
         tr_boxes = tr_boxes[idx]
-        
-        centers_width = int((tr_boxes[:, 2] + tr_boxes[:, 0]) * width / 2)
-        centers_height = int((tr_boxes[:, 3] + tr_boxes[:, 1]) * height / 2)
+
+        # TODO: just use normalized for now ...
+        #centers_width = (tr_boxes[:, 2] + tr_boxes[:, 0]) * width / 2
+        #centers_height = (tr_boxes[:, 3] + tr_boxes[:, 1]) * height / 2
+        centers_width = (tr_boxes[:, 2] + tr_boxes[:, 0]) / 2
+        centers_height = (tr_boxes[:, 3] + tr_boxes[:, 1]) / 2
         depth_medians = self._median_depth_of_boxes(depth_frame_np, width,
                                                     height, tr_boxes)
 
         to_concat = [
             np.expand_dims(tr_classes, 1),      # class id
-            np.expand_dims(centers_width, 1),   # center pixel x axis (width)
-            np.expand_dims(centers_height, 1),  # center pixel y axis (height)
+            np.expand_dims(centers_width, 1),   # normalized center pixel x
+            np.expand_dims(centers_height, 1),  # normalized center pixel y
             np.expand_dims(depth_medians, 1),   # approx depth of object
         ]
 
@@ -374,6 +414,8 @@ class ObjectDetector(object):
 
     def process_depth_frame(self, data):
         """Saves the last depth frame as numpy array.
+        
+        Callback for the rospy.Subscriber('/camera/depth/image_raw')
         """
         self.last_depth_frame = self._convert_depth_to_np_array(data)
 
@@ -383,7 +425,7 @@ class ObjectDetector(object):
         Parameters
         ----------
         depth_frame_np : np.array
-            
+            Numpy frame of depth image.
         width : int
             The width (in pixels) of RGB/Depth images taken by astra camera.
         height : int
@@ -394,7 +436,8 @@ class ObjectDetector(object):
         Returns
         -------
         np.array
-            Approximate depth of the object in each of the bounding boxes.
+            Approximate depth (meters) of the object in each of the bounding
+            boxes.
         """
         pixel_boxes = boxes * np.array([height, width, height, width])
         pixel_boxes = pixel_boxes.astype(int)

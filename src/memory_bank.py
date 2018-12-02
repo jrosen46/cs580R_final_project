@@ -16,8 +16,9 @@ from rospy.numpy_msg import numpy_msg
 class MemoryBank(object):
     """External memory bank node."""
 
-    # TODO: have no idea about order of magnitude ... test it
-    TOLERANCE = 1e-2    
+    # TODO: have no idea about order of magnitude ... will depend on what layer
+    #       of the network we choose ... test it
+    TOLERANCE = 1e-2
 
     def __init__(self):
 
@@ -25,8 +26,6 @@ class MemoryBank(object):
 
         rospy.init_node('mem_bank', anonymous=False)
 
-        # TODO: Need to decide on topic that we will receive feature vector
-        #       information from.
         rospy.Subscriber('feature_vectors', numpy_msg(Floats),
                          self._compute_l2_and_add_to_bank)
 

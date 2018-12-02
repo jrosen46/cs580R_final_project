@@ -84,7 +84,7 @@ class ObjectDetector(object):
 
     def __init__(self):
 
-	# tensorflow model
+        # tensorflow model
         self.detection_graph = self._init_detection_network()
         self.tensor_dict = self._init_tensor_handles()
         self.label_map = self._load_labels()
@@ -95,19 +95,23 @@ class ObjectDetector(object):
 
         rospy.init_node('detector', anonymous=False)
 
+        # just hold last available depth frame to approx. depth of
+        # current rgb frame
+        rospy.Subscriber('/camera/depth/image_raw', Image,
+                         self.process_depth_frame,
+                         queue_size=1, buff_size=2**24)
+        self.last_depth_frame = None
+
         rospy.Subscriber('/camera/rgb/image_raw', Image,
                          self.run_inference_for_single_image,
                          queue_size=1, buff_size=2**24)
 
-        # need to figure this callback out to process the depth frame too ...
-        rospy.Subscriber('/camera/depth/image_raw', Image,
-                         self.process_depth_frame,
-                         queue_size=1, buff_size=2**24)
-
-
         # TODO: Need to determine the topics that we are going to send this
         # information too ... also need to decide on the format of the messages.
-        #self.obj_detec_pub = rospy.Publisher('', String, queue_size=10)
+        self.obj_detect_pub = rospy.Publisher('processed_detections',
+                                              numpy_msg(Floats),
+                                              queue_size=10)
+
         self.feat_vec_pub = rospy.Publisher('feature_vectors',
                                             numpy_msg(Floats),
                                             queue_size=10)
@@ -190,32 +194,6 @@ class ObjectDetector(object):
         """
         assert hasattr(self, 'detection_graph')
 
-#        # Get handles to tensors
-#        tensor_names = [
-#            'num_detections', 'detection_boxes', 'detection_scores',
-#            'detection_classes', 'detection_masks',
-#        ]
-#        tensor_dict = {
-#            name: self.detection_graph.get_tensor_by_name(name + ':0')
-#            for name in tensor_names
-#        }
-#
-#        # The following processing is only for single image
-#        boxes = tf.squeeze(tensor_dict['detection_boxes'], [0])
-#        masks = tf.squeeze(tensor_dict['detection_masks'], [0])
-#        # Reframe is required to translate mask from box coordinates to
-#        # image coordinates and fit the image size.
-#        num_detect = tf.cast(tensor_dict['num_detections'][0], tf.int32)
-#        boxes = tf.slice(boxes, [0, 0], [num_detect, -1])
-#        masks = tf.slice(masks, [0, 0, 0], [num_detect, -1, -1])
-#        masks_reframed = utils_ops.reframe_box_masks_to_image_masks(
-#            masks, boxes, image_np.shape[0], image_np.shape[1])
-#        masks_reframed = tf.cast(tf.greater(masks_reframed, 0.5), tf.uint8)
-#        # Follow the convention by adding back the batch dimension
-#        tensor_dict['detection_masks'] = tf.expand_dims(masks_reframed, 0)
-#
-#        return tensor_dict
-
         # Get handles to tensors
         tensor_names = [
             'num_detections',
@@ -260,16 +238,22 @@ class ObjectDetector(object):
         assert hasattr(self, 'detection_graph')
         return tf.Session(graph=self.detection_graph)
 
-    def _convert_to_np_array(self, data):
-        """
-        """
+    def _convert_rgb_to_np_array(self, data):
+        """Converts RGB sensor_msgs/Image data to numpy array."""
         cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
         image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
         return np.asarray(image)
 
+    def _convert_depth_to_np_array(self, data):
+        """Converts depth sensor_msgs/Image data to numpy array."""
+        # TODO: do all of these work correctly?
+        cv_image = self.bridge.imgmsg_to_cv2(data, "32FC1")
+        #cv_image = self.bridge.imgmsg_to_cv2(data, "passthrough")
+        #cv_image = self.bridge.imgmsg_to_cv2(data)
+        return np.asarray(cv_image)
+
     def run_inference_for_single_image(self, data):
         """
-
         Format of `output_dict`:
             'detection_classes': np.array with 100 uint8, contains class ids
             'detection_boxes': np.array with shape (100, 4);
@@ -280,7 +264,11 @@ class ObjectDetector(object):
             'feature_vector': np.array float32
 
         """
-        image_np = self._convert_to_np_array(data)
+        image_np = self._convert_rgb_to_np_array(data)
+        depth_frame_np = self.last_depth_frame
+        assert image_np.shape[:2] == depth_frame_np.shape[:2]
+        height, width, _ = image_np.shape
+
         image_tensor = self.detection_graph.get_tensor_by_name('image_tensor:0')
 
         # Run inference
@@ -296,24 +284,128 @@ class ObjectDetector(object):
         output_dict['detection_scores'] = output_dict['detection_scores'][0]
         output_dict['feature_vector'] = (output_dict['feature_vector'][0]
                                          .flatten())
-        #output_dict['detection_masks'] = output_dict['detection_masks'][0]
+         
+        # TODO: need more logic here that is going to connect with             
+
+        ###############################################################
+        # TODO: figure out when to publish the processed detections
+        processed_detections = self.process_detections(
+            width, height, depth_frame_np, **output_dict)
+        self.obj_detect_pub.publish(processed_detections)
+        ###############################################################
+
+        ###############################################################
+        # TODO: figure out when to publish the feature vectors
+        feature_vectors = output_dict.pop('feature_vector')
+        self.feat_vec_pub.publish(feature_vectors)
+        ###############################################################
 
 
-        # TODO: need to process the results here ... maybe publish them to a
-        #       topic so that another node could worry about the logic of what
-        #       to do with the information?
+        
+    def process_detections(self, width, height, depth_frame_np, num_detections,
+                           detection_classes, detection_boxes,
+                           detection_scores):
+        """Process information obtained from object detection network.
 
-        # TODO: take this print statement out ... just a placeholder for now
-        print str(output_dict)
+        Information about the 100 most confident objects is returned from
+        the object detection network. Often, the confidence on many of these
+        objects is very small. We only want to look at the objects that
+        the network is confident about.
 
-        self.feat_vec_pub.publish(output_dict['feature_vector'])
+        We will return the center point of the most confident bounding
+        box for each unique object (provided that the confidence meets
+        a certain threshold).
 
+        Parameters
+        ----------
+        width : int
+            The width (in pixels) of RGB image taken by astra camera.
+        height : int
+            The height (in pixels) of RGB image taken by astra camera.
+        depth_frame_np :
+        num_detections :
+        detection_classes :
+        detection_boxes :
+        detection_scores :
 
-        return output_dict
+        Returns
+        -------
+        numpy.array of shape ()
+            Will contain the object id, the center x coordinate, and the center-y
+            coordinate.
+        """
+        # TODO: Check to see if no objects are above confidence ... do not publish
+        #       if this is the case.
+
+        # trim to only consider boxes with high confidence
+        #tr_scores = detection_scores[detection_scores > .80]
+        #tr_num = tr_scores.shape[0]
+        #tr_classes = detection_classes[:tr_num]
+        #tr_boxes = detection_boxes[:tr_num, :]
+
+        tr_scores = detection_scores
+        tr_num = tr_scores.shape[0]
+        tr_classes = detection_classes
+        tr_boxes = detection_boxes
+
+        # trim to only consider most confident object from each class
+        uq, idx = np.unique(tr_classes, return_index=True)
+        idx = np.sort(idx)
+
+        tr_scores = tr_scores[idx]
+        tr_classes = tr_classes[idx]
+        tr_boxes = tr_boxes[idx]
+        
+        centers_width = int((tr_boxes[:, 2] + tr_boxes[:, 0]) * width / 2)
+        centers_height = int((tr_boxes[:, 3] + tr_boxes[:, 1]) * height / 2)
+        depth_medians = self._median_depth_of_boxes(depth_frame_np, width,
+                                                    height, tr_boxes)
+
+        to_concat = [
+            np.expand_dims(tr_classes, 1),      # class id
+            np.expand_dims(centers_width, 1),   # center pixel x axis (width)
+            np.expand_dims(centers_height, 1),  # center pixel y axis (height)
+            np.expand_dims(depth_medians, 1),   # approx depth of object
+        ]
+
+        objects = np.concatenate(to_concat, axis=1).astype(np.float32)
+
+        return objects
 
     def process_depth_frame(self, data):
-        # do we need to use opencv here?
-        pass
+        """Saves the last depth frame as numpy array.
+        """
+        self.last_depth_frame = self._convert_depth_to_np_array(data)
+
+    def _median_depth_of_boxes(self, depth_frame_np, width, height, boxes):
+        """Approximates objects depth by using median depth on bounding box.
+
+        Parameters
+        ----------
+        depth_frame_np : np.array
+            
+        width : int
+            The width (in pixels) of RGB/Depth images taken by astra camera.
+        height : int
+            The height (in pixels) of RGB/Depth images taken by astra camera.
+        boxes : np.array of shape (num boxes, 4)
+            Each row is a box. The 4 columns are ymin, xmin, ymax, xmax
+
+        Returns
+        -------
+        np.array
+            Approximate depth of the object in each of the bounding boxes.
+        """
+        pixel_boxes = boxes * np.array([height, width, height, width])
+        pixel_boxes = pixel_boxes.astype(int)
+
+        # TODO: this can be made faster by vectorizing
+        approx_depth = np.array([
+            np.nanmedian(depth_frame_np[box[1]:box[3], box[0]:box[2]])
+            for box in pixel_boxes
+        ])
+
+        return approx_depth
 
 
 if __name__ == '__main__':

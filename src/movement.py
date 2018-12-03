@@ -46,7 +46,7 @@ class Movement(object):
         self.ac = actionlib.SimpleActionClient('move_base', MoveBaseAction)
         self.ac.wait_for_server(rospy.Duration(5))
 
-        rospy.Subscriber('processed_detectios', numpy_msg(Floats),
+        rospy.Subscriber('processed_detections', numpy_msg(Floats),
                          self.detection_callback)
         rospy.Subscriber('/odom', Odometry, self.set_approx_pose)
 

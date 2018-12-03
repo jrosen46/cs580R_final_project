@@ -85,7 +85,7 @@ SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class ObjectDetector(object):
     """Object detection node.
-    
+
     Published Topics
     ----------------
     '/processed_detections'
@@ -95,7 +95,7 @@ class ObjectDetector(object):
     -----------------
     '/camera/depth/image_raw'
     '/camera/rgb/image_raw'
-    
+
     """
     def __init__(self):
 
@@ -294,6 +294,9 @@ class ObjectDetector(object):
             taken from a higher layer in the network.
 
         """
+        while self.last_depth_frame is None:
+            time.sleep(1)
+
         image_np = self._convert_rgb_to_np_array(data)
         depth_frame_np = self.last_depth_frame
         assert image_np.shape[:2] == depth_frame_np.shape[:2]
@@ -324,7 +327,7 @@ class ObjectDetector(object):
         #       arrays or just reshape upon send/receive of this topic.
         processed_detections = self.process_detections(depth_frame_np, width,
                                                        height, **output_dict)
-        if processed_detections is not None: 
+        if processed_detections is not None:
             self.obj_detect_pub.publish(processed_detections.flatten())
 
 
@@ -394,10 +397,10 @@ class ObjectDetector(object):
         tr_boxes = tr_boxes[idx]
 
         # TODO: just use normalized for now ...
-        #centers_width = (tr_boxes[:, 2] + tr_boxes[:, 0]) * width / 2
-        #centers_height = (tr_boxes[:, 3] + tr_boxes[:, 1]) * height / 2
-        centers_width = (tr_boxes[:, 2] + tr_boxes[:, 0]) / 2
-        centers_height = (tr_boxes[:, 3] + tr_boxes[:, 1]) / 2
+        #centers_width = (tr_boxes[:, 1] + tr_boxes[:, 3]) * width / 2
+        #centers_height = (tr_boxes[:, 0] + tr_boxes[:, 2]) * height / 2
+        centers_width = (tr_boxes[:, 1] + tr_boxes[:, 3]) / 2
+        centers_height = (tr_boxes[:, 0] + tr_boxes[:, 2]) / 2
         depth_medians = self._median_depth_of_boxes(depth_frame_np, width,
                                                     height, tr_boxes)
 
@@ -414,7 +417,7 @@ class ObjectDetector(object):
 
     def process_depth_frame(self, data):
         """Saves the last depth frame as numpy array.
-        
+
         Callback for the rospy.Subscriber('/camera/depth/image_raw')
         """
         self.last_depth_frame = self._convert_depth_to_np_array(data)
@@ -442,9 +445,12 @@ class ObjectDetector(object):
         pixel_boxes = boxes * np.array([height, width, height, width])
         pixel_boxes = pixel_boxes.astype(int)
 
-        # TODO: this can be made faster by vectorizing
+        def _depth_median(arr):
+            """Excludes np.nan's and zeros from median depth calculation."""
+            return np.median(arr[~np.logical_or(np.isnan(arr), arr == 0.)])
+
         approx_depth = np.array([
-            np.nanmedian(depth_frame_np[box[1]:box[3], box[0]:box[2]])
+            _depth_median(depth_frame_np[box[0]:box[2], box[1]:box[3]])
             for box in pixel_boxes
         ])
 

@@ -63,15 +63,15 @@ class Movement(object):
 
         #http://www.theconstructsim.com/ros-qa-how-to-convert-quaternions-to-euler-angles/
         """
-        data = data.reshape(-1, 4)
+        data = data.data.reshape(-1, 4)
 
         if self.target_id in set(data[:, 0]):
             self.auto_explore_on = False    # stop auto exploration
 
             bool_arr = (data[:, 0] == self.target_id)
             target_arr = np.squeeze(data[bool_arr, :])
-            x_center, depth = target_arr[[1, 3]]
-            deg_rotate = (.5 - x_center) * 60
+            width_center, depth = target_arr[[1, 3]]
+            deg_rotate = (.5 - width_center) * 60
             rad_rotate = abs(deg_rotate) * math.pi / 180.
             y_movement_action_lib = depth*math.tan(rad_rotate)
             if deg_rotate < 0.:
@@ -111,7 +111,8 @@ class Movement(object):
         """
         """
         move_msg = Twist()
-        move_msg.linear.x = .2
+        move_msg.linear.x = .1
+        move_msg.angular.z = .4
         self.twist_pub.publish(move_msg)
 
     def auto_explore(self):

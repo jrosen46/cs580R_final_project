@@ -18,6 +18,8 @@ from nav_msgs.msg import Odometry, OccupancyGrid
 import actionlib
 from actionlib_msgs.msg import GoalStatus
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
+from rospy_tutorials.msg import Floats
+from rospy.numpy_msg import numpy_msg
 
 #http://www.theconstructsim.com/ros-qa-how-to-convert-quaternions-to-euler-angles/
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
@@ -28,12 +30,18 @@ class Movement(object):
 
     def __init__(self):
 
+        # TARGET OBJECT FOR TESTING IS A CHAIR
+        self.target_id = 62
+
+        # whether to auto explore or not
+        self.auto_explore_on = True
+
         # keep track of approx pose from /odom topic
         self.approx_last_pose = None
         
         rospy.init_node('movement', anonymous=False)
 
-        self.pub = rospy.Publisher('/cmd_vel_mux/input/teleop', Twist,
+        self.twist_pub = rospy.Publisher('/cmd_vel_mux/input/teleop', Twist,
                                    queue_size=10) 
         self.ac = actionlib.SimpleActionClient('move_base', MoveBaseAction)
         self.ac.wait_for_server(rospy.Duration(5))
@@ -47,8 +55,6 @@ class Movement(object):
 
     def detection_callback(self, data):
         """Moves toward target object.
-        """
-        pass
 
         # TODO: https://answers.ros.org/question/203952/move_base-goals-in-base_link-for-turtlebot/
         # first we query pose to get an idea of where the robot thinks it is ... then we add our
@@ -56,33 +62,70 @@ class Movement(object):
         # on where it is right? 
 
         #http://www.theconstructsim.com/ros-qa-how-to-convert-quaternions-to-euler-angles/
+        """
+        data = data.reshape(-1, 4)
 
-        # TODO: make this more robust later ...
         if self.target_id in set(data[:, 0]):
+            self.auto_explore_on = False    # stop auto exploration
 
-            # gather last pose and transform into euler
+            bool_arr = (data[:, 0] == self.target_id)
+            target_arr = np.squeeze(data[bool_arr, :])
+            x_center, depth = target_arr[[1, 3]]
+            deg_rotate = (.5 - x_center) * 60
+            rad_rotate = abs(deg_rotate) * math.pi / 180.
+            y_movement_action_lib = depth*math.tan(rad_rotate)
+            if deg_rotate < 0.:
+                y_movement_action_lib *= -1
+
+            # gather last position and update
+            position = self.approx_last_pose.position
+            position.x += depth
+            position.y += y_movement_action_lib
+
+            # use last orientation
             orient = self.approx_last_pose.orientation
-            orient_list = [orient_q.x, orient_q.y, orient_q.z, orient_q.w]
-            roll, pitch, yaw = euler_from_quaternion(orient_list)
 
+            # create goal and move towards object
+            goal = MoveBaseGoal()
+            # goal.target_pose is a PoseStamped msg
+            goal.target_pose.header.frame_id = 'map'
+            goal.target_pose.header.stamp = rospy.get_rostime()
+            goal.target_pose.pose = Pose(position, orient)
+            self.ac.send_goal(goal)
+            self.ac.wait_for_result(rospy.Duration(60))
+
+            # understand what the GoalStatus object is
+            #if ac.get_state() != GoalStatus.SUCCEEDED:
+                # try and move the robot a bit and try again
+            #    raise NotImplementedError
+             
+            #orient_list = [orient_q.x, orient_q.y, orient_q.z, orient_q.w]
+            #roll, pitch, yaw = euler_from_quaternion(orient_list)
+            #assert yaw >= 0
             # now add how much we want to rotate here ... only add the z direction
-
-
+            #to_rotate = yaw+rad_rotate
             # convert back into quaternion to use with action lib
-            Quaternion(quaternion_from_euler(roll, pitch, yaw))
+            #Quaternion(quaternion_from_euler(roll, pitch, to_rotate))
 
+    def _auto_explore(self):
+        """
+        """
+        move_msg = Twist()
+        move_msg.linear.x = .2
+        self.twist_pub.publish(move_msg)
 
     def auto_explore(self):
         """
         """
-        pass
+        rate = rospy.Rate(10)
+        while self.auto_explore_on:
+            self._auto_explore()
+            rate.sleep()
 
     def set_approx_pose(self, data):
         """
         """
         self.approx_last_pose = data.pose.pose
-
-    
 
     def _rotate(self, degrees, direction):
         """Rotates turtlebot.

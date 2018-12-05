@@ -1,5 +1,15 @@
 <launch>
 
+    <arg name="_model_name" default="ssd_mobilenet_v1" />
+    <arg name="_target_object" default="person" />
+    <arg name="_depth_correction" value="0.001" />
+    <arg name="_confidence_cutoff" default="0.6" />
+    
+    <param name="_model_name" value="$(arg _model_name)" />
+    <param name="_target_object" value="$(arg _target_object)" />
+    <param name="_depth_correction" value="$(arg _depth_correction)" />
+    <param name="_confidence_cutoff" value="$(arg _confidence_cutoff)" />
+
     <!-- Launch base bringup-->
     <include file="$(find turtlebot_bringup)/launch/minimal.launch"/>
 

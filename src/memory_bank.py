@@ -11,6 +11,7 @@ import numpy as np
 import rospy
 from rospy_tutorials.msg import Floats
 from rospy.numpy_msg import numpy_msg
+from std_msgs.msg import String
 
 
 class MemoryBank(object):
@@ -27,47 +28,47 @@ class MemoryBank(object):
         rospy.init_node('mem_bank', anonymous=False)
 
         rospy.Subscriber('feature_vectors', numpy_msg(Floats),
-                         self._compute_l2_and_add_to_bank)
+                         self.feat_vec_callback)
 
-        # TODO: Need to decide on topic that will handle movement, and publish
-        #       whether or not to explore the room.
-        self.pub = rospy.Publisher('', String, queue_size=10)
+        self.pub = rospy.Publisher('mem_bank_explore', String, queue_size=10)
 
-    def _compute_l2_and_add_to_bank(self, feature_vecs):
-        """Computes l2 b/n incoming feat vectors and feat vectors in mem bank.
+    def feat_vec_callback(self, feat_vecs):
+        """
+        """
+        feat_vecs = feat_vecs.data
+
+        if self.mem_bank:
+            l2_dist = self._compute_l2(feat_vecs)
+            if l2_dist.min() < self.TOLERANCE:
+                self.pub(String("ALREADY EXPLORED"))
+            else:
+                self.pub(String("ENTER ROOM"))
+
+        self.mem_bank += feat_vecs.tolist()
+
+    def _compute_l2(self, feat_vecs):
+        """Computes l2 b/n incoming `feat_vecs` and the feature vectors already
+        in `mem_bank`.
+
+        This will result in a 2d array of shape: (# new feature vectors, #
+        feature vectors in `mem_bank`). The values will contain the l2 distance
+        b/t each new feature vector and every feature vector in `mem_bank`
+        (i.e. value for position 2, 8 in array will be the l2 norm b/t the
+        third incoming feature vector and the ninth vector in the `mem_bank`).
 
         Parameters
         ----------
-        feature_vecs : numpy.ndarray of shape (# vectors, # features)
+        feat_vecs : numpy.ndarray of shape (# vectors, # features)
             Will contain a number of feature vectors from the doorway of
             a room. Each row will contain a different feature vector.
 
         Returns
         -------
 
-        TODO
-        ----
-        > will this give a memory error if too large? Possibly look at:
-        https://stackoverflow.com/questions/27948363/
-            numpy-broadcast-to-perform-euclidean-distance-vectorized
         """
-
-        # This will result in a 2d array of shape: (# new feature vectors, #
-        # feature vectors in `mem_bank`). The values will contain the l2
-        # distance b/t each new feature vector and every feature vector in the
-        # bank (i.e. value for position 2, 8 in array will be the l2 norm b/t
-        # the third incoming feature vector and the ninth vector in the
-        # `mem_bank`).
-        l2 = np.sqrt(np.square(feature_vecs[:, np.newaxis]
+        l2 = np.sqrt(np.square(feat_vecs[:, np.newaxis]
                      - np.asarray(self.mem_bank)).sum(axis=2))
-
-        if l2.min() < self.TOLERANCE:
-            # TODO: DO NOT ENTER ROOM ... ALREADY BEEN THERE!
-            # Publish
-            pass
-        else:
-            # TODO: ENTER ROOM
-            pass
+        return l2
 
 
 

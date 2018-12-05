@@ -99,6 +99,12 @@ class ObjectDetector(object):
     """
     def __init__(self):
 
+        # parameters ... allows customization by user
+        self._model_param = rospy.get_param('/_model_name')
+        self._depth_correction = float(rospy.get_param('/_depth_correction'))
+        self._confidence_cutoff = float(rospy.get_param('/_confidence_cutoff'))
+        print str(type(self._confidence_cutoff))
+
         # tensorflow model
         self.detection_graph = self._init_detection_network()
         self.tensor_dict = self._init_tensor_handles()
@@ -139,31 +145,35 @@ class ObjectDetector(object):
         frozen_graph_path : str
             Path to the frozen model.
         """
+        poss_model_files = {
+            'ssd_mobilenet_v1': 'ssd_mobilenet_v1_coco_2017_11_17.tar.gz',
+            'faster_rcnn_inception_resenet_v2': (
+                'faster_rcnn_inception_resnet_v2_atrous_lowproposals_oid_'
+                '2018_01_28.tar.gz'),
+        }
+        if self._model_param not in poss_model_files:
+            raise ValueError('Name of model_name parameter not correct')
+
         # Model to download ... look at model zoo for other options.
         download_base = 'http://download.tensorflow.org/models/object_detection/'
-        model_file = 'ssd_mobilenet_v1_coco_2017_11_17.tar.gz'
-        #model_file = ('faster_rcnn_inception_resnet_v2_atrous_lowproposals'
-        #              '_oid_2018_01_28.tar.gz')
+        model_file = poss_model_files[self._model_param]
         model_path = os.path.join(SRC_DIR, 'models', model_file)
-
-        # need to check if exists first b/c `exist_ok` arg does not exist
-        # for `makedirs` in python2.7
-        if not os.path.exists(os.path.dirname(model_path)):
-            os.makedirs(os.path.dirname(model_path))
-
-        opener = urllib.request.URLopener()
-        opener.retrieve(download_base + model_file, model_path)
-        tar_file = tarfile.open(model_path)
-        for file_ in tar_file.getmembers():
-            file_name = os.path.basename(file_.name)
-            if file_name == 'frozen_inference_graph.pb':
-                tar_file.extract(file_, os.path.join(SRC_DIR, 'models'))
-
-        # Path to frozen detection graph. This is the actual model that is used for
-        # the object detection.
         frozen_graph_path = os.path.join(SRC_DIR, 'models',
                                          model_file.partition('.')[0],
                                          'frozen_inference_graph.pb')
+
+        # need to check if exists first b/c `exist_ok` arg does not exist
+        # for `makedirs` in python2.7
+        if not os.path.exists(frozen_graph_path):
+            os.makedirs(os.path.dirname(model_path))
+            opener = urllib.request.URLopener()
+            opener.retrieve(download_base + model_file, model_path)
+            tar_file = tarfile.open(model_path)
+            for file_ in tar_file.getmembers():
+                file_name = os.path.basename(file_.name)
+                if file_name == 'frozen_inference_graph.pb':
+                    tar_file.extract(file_, os.path.join(SRC_DIR, 'models'))
+
         return frozen_graph_path
 
     def _load_frozen_graph(self, frozen_graph_path):
@@ -215,18 +225,31 @@ class ObjectDetector(object):
             'detection_boxes',
             'detection_scores',
             'detection_classes',
-            ('FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_2_Conv2d_5_3x3_'
-             's2_128/Relu6'),  # ssd net; need to change for other network
         ]
+        # add feature vector
+        if self._model_param == 'ssd_mobilenet_v1':
+            tensor_names.append(
+                'FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_2_Conv2d_5_'
+                '3x3_s2_128/Relu6')
+        elif self_model_param == 'faster_rcnn_inception_resnet_v2':
+            raise NotImplementedError("Need to look up feat vector for resnet.")
+        else:
+            raise ValueError
+
         tensor_dict = {
             name: self.detection_graph.get_tensor_by_name(name + ':0')
             for name in tensor_names
         }
 
         # change name of feature vector to make it more readable
-        tensor_dict['feature_vectors'] = tensor_dict.pop(
-            'FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_2_Conv2d_5_3x3_'
-            's2_128/Relu6')
+        if self._model_param == 'ssd_mobilenet_v1':
+            tensor_dict['feature_vectors'] = tensor_dict.pop(
+                'FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_2_Conv2d_5_'
+                '3x3_s2_128/Relu6')
+        elif self_model_param == 'faster_rcnn_inception_resnet_v2':
+            raise NotImplementedError("Need to look up feat vector for resnet.")
+        else:
+            raise ValueError
 
         return tensor_dict
 
@@ -238,9 +261,18 @@ class ObjectDetector(object):
         label_map :
         """
         # List of the strings that is used to add correct label for each box.
-        path_to_labels = os.path.join(SRC_DIR, 'labels', 'mscoco_label_map.pbtxt')
+        if self._model_param == 'ssd_mobilenet_v1':
+            path_to_labels = os.path.join(SRC_DIR, 'labels',
+                                          'mscoco_label_map.pbtxt')
+        elif self_model_param == 'faster_rcnn_inception_resnet_v2':
+            path_to_labels == os.path.join(SRC_DIR, 'labels',
+                                           'oid_bbox_trainable_label_map.pbtxt')
+        else:
+            raise ValueError
+
         label_map = label_map_util.create_category_index_from_labelmap(
             path_to_labels, use_display_name=True)
+
         return label_map
 
     def _init_sess(self):
@@ -379,7 +411,7 @@ class ObjectDetector(object):
             confident about any object, then returns None.
         """
         # trim to only consider boxes with high confidence
-        tr_scores = detection_scores[detection_scores > .80]
+        tr_scores = detection_scores[detection_scores > self._confidence_cutoff]
         tr_num = tr_scores.shape[0]
         tr_classes = detection_classes[:tr_num]
         tr_boxes = detection_boxes[:tr_num, :]
@@ -421,6 +453,9 @@ class ObjectDetector(object):
         Callback for the rospy.Subscriber('/camera/depth/image_raw')
         """
         self.last_depth_frame = self._convert_depth_to_np_array(data)
+        # Apply depth correction. For some reason the astra camera returns
+        # depth in mm, whereas gazebo returns depth in meters.
+        self.last_depth_frame *= self._depth_correction
 
     def _median_depth_of_boxes(self, depth_frame_np, width, height, boxes):
         """Approximates objects depth by using median depth on bounding box.

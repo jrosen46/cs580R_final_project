@@ -31,6 +31,8 @@ class Movement(object):
 
     def __init__(self):
 
+        print str(rospy.get_param_names())
+
         # TARGET OBJECT FOR TESTING IS A PERSON B/C EASY TO RECOGNIZE
         self.target_id = 1
 
@@ -49,6 +51,8 @@ class Movement(object):
 
         rospy.Subscriber('processed_detections', numpy_msg(Floats),
                          self.detection_callback)
+        rospy.Subscriber('mem_bank_explore', String,
+                         self.mem_bank_callback)
         rospy.Subscriber('/odom', Odometry, self.set_approx_pose)
 
         # TODO: Also need to subscribe to a topic that is published from the
@@ -85,8 +89,9 @@ class Movement(object):
                     rad_rotate *= -1
                 #print 'radian rotate: ' + str(rad_rotate)
                 move_msg = Twist()
-                move_msg.linear.x = .4 * depth
-                move_msg.angular.z = 2 * rad_rotate
+                if depth > 0.4:
+                    move_msg.linear.x = .2 * depth
+                    move_msg.angular.z = rad_rotate
                 self.twist_pub.publish(move_msg)
 
             if False:
@@ -119,6 +124,12 @@ class Movement(object):
                 #if ac.get_state() != GoalStatus.SUCCEEDED:
                     # try and move the robot a bit and try again
                     #raise NotImplementedError
+    
+    def mem_bank_callback(self, data):
+        """
+        """
+        pass
+        
 
     def _auto_explore(self):
         """

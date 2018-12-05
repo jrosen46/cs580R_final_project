@@ -10,6 +10,7 @@ I am going to assume that the field of view of the camera is 60 degrees.
 """
 import math
 import time
+import numpy as np
 
 import rospy
 from std_msgs.msg import String
@@ -30,8 +31,8 @@ class Movement(object):
 
     def __init__(self):
 
-        # TARGET OBJECT FOR TESTING IS A CHAIR
-        self.target_id = 62
+        # TARGET OBJECT FOR TESTING IS A PERSON B/C EASY TO RECOGNIZE
+        self.target_id = 1
 
         # whether to auto explore or not
         self.auto_explore_on = True
@@ -64,48 +65,60 @@ class Movement(object):
         #http://www.theconstructsim.com/ros-qa-how-to-convert-quaternions-to-euler-angles/
         """
         data = data.data.reshape(-1, 4)
+        print type(data)
 
         if self.target_id in set(data[:, 0]):
             self.auto_explore_on = False    # stop auto exploration
-
+            print 'turned auto_explore_off'
             bool_arr = (data[:, 0] == self.target_id)
             target_arr = np.squeeze(data[bool_arr, :])
             width_center, depth = target_arr[[1, 3]]
+            print 'width_center: ' + str(width_center)
+            print 'depth: ' + str(depth)
             deg_rotate = (.5 - width_center) * 60
             rad_rotate = abs(deg_rotate) * math.pi / 180.
-            y_movement_action_lib = depth*math.tan(rad_rotate)
-            if deg_rotate < 0.:
-                y_movement_action_lib *= -1
+            print 'degree rotate: ' + str(deg_rotate)
 
-            # gather last position and update
-            position = self.approx_last_pose.position
-            position.x += depth
-            position.y += y_movement_action_lib
+            # Two alternatives to movement ... currently actionlib not working
+            if True:
+                if deg_rotate < 0.:
+                    rad_rotate *= -1
+                #print 'radian rotate: ' + str(rad_rotate)
+                move_msg = Twist()
+                move_msg.linear.x = .4 * depth
+                move_msg.angular.z = 2 * rad_rotate
+                self.twist_pub.publish(move_msg)
 
-            # use last orientation
-            orient = self.approx_last_pose.orientation
+            if False:
+                y_movement_action_lib = depth*math.tan(rad_rotate)
+                if deg_rotate < 0.:
+                    y_movement_action_lib *= -1
+                #print 'y_movement_action_lib: ' + str(y_movement_action_lib)
+                # TODO: actionlibrary currently not working ...
+                # gather last position and update
+                position = self.approx_last_pose.position
+                print 'position1: ' + str(position)
 
-            # create goal and move towards object
-            goal = MoveBaseGoal()
-            # goal.target_pose is a PoseStamped msg
-            goal.target_pose.header.frame_id = 'map'
-            goal.target_pose.header.stamp = rospy.get_rostime()
-            goal.target_pose.pose = Pose(position, orient)
-            self.ac.send_goal(goal)
-            self.ac.wait_for_result(rospy.Duration(60))
+                position.x += depth
+                position.y += y_movement_action_lib
+                print 'position2: ' + str(position)
 
-            # understand what the GoalStatus object is
-            #if ac.get_state() != GoalStatus.SUCCEEDED:
-                # try and move the robot a bit and try again
-            #    raise NotImplementedError
-             
-            #orient_list = [orient_q.x, orient_q.y, orient_q.z, orient_q.w]
-            #roll, pitch, yaw = euler_from_quaternion(orient_list)
-            #assert yaw >= 0
-            # now add how much we want to rotate here ... only add the z direction
-            #to_rotate = yaw+rad_rotate
-            # convert back into quaternion to use with action lib
-            #Quaternion(quaternion_from_euler(roll, pitch, to_rotate))
+                # use last orientation
+                orient = self.approx_last_pose.orientation
+
+                # create goal and move towards object
+                goal = MoveBaseGoal()
+                # goal.target_pose is a PoseStamped msg
+                goal.target_pose.header.frame_id = 'map'
+                goal.target_pose.header.stamp = rospy.get_rostime()
+                goal.target_pose.pose = Pose(position, orient)
+                self.ac.send_goal(goal)
+                self.ac.wait_for_result(rospy.Duration(60))
+
+                # understand what the GoalStatus object is
+                #if ac.get_state() != GoalStatus.SUCCEEDED:
+                    # try and move the robot a bit and try again
+                    #raise NotImplementedError
 
     def _auto_explore(self):
         """

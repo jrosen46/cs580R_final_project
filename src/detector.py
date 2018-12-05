@@ -35,19 +35,6 @@ Here are some options for ssd mobilenet:
     Tensor("FeatureExtractor/MobilenetV1/Conv2d_13_pointwise_2_Conv2d_5_3x3_s2_128/Relu6:0",
     shape=(?, 1, 1, 128), dtype=float32)
 
-Here are some options for faster rcnn inception resnet v2 atrous low proposals:
-    ... should we not even worry about this? This detection network takes a
-    very long time, and since we just need feature vectors, it will probably
-    work decently with any net ...
-
-
-I think we need to use a higher level feature detector ... very hard to distinguish
-using ssd_mobilenet_v1 with this level.
-
-> We need some way to get the real world coordinates of object ... try and use some of the
-  ideas from here ...
-https://github.com/cagbal/ros_people_object_detection_tensorflow/blob/master/src/projection.py
-
 """
 import os
 import six.moves.urllib as urllib
@@ -147,7 +134,7 @@ class ObjectDetector(object):
         """
         poss_model_files = {
             'ssd_mobilenet_v1': 'ssd_mobilenet_v1_coco_2017_11_17.tar.gz',
-            'faster_rcnn_inception_resenet_v2': (
+            'faster_rcnn_inception_resnet_v2': (
                 'faster_rcnn_inception_resnet_v2_atrous_lowproposals_oid_'
                 '2018_01_28.tar.gz'),
         }
@@ -293,11 +280,7 @@ class ObjectDetector(object):
 
     def _convert_depth_to_np_array(self, data):
         """Converts depth sensor_msgs/Image data to numpy array."""
-
-        # TODO: Do all of these work correctly?
         cv_image = self.bridge.imgmsg_to_cv2(data, "32FC1")
-        #cv_image = self.bridge.imgmsg_to_cv2(data, "passthrough")
-        #cv_image = self.bridge.imgmsg_to_cv2(data)
         return np.asarray(cv_image)
 
     def run_inference_for_single_image(self, data):
@@ -428,9 +411,6 @@ class ObjectDetector(object):
         tr_classes = tr_classes[idx]
         tr_boxes = tr_boxes[idx]
 
-        # TODO: just use normalized for now ...
-        #centers_width = (tr_boxes[:, 1] + tr_boxes[:, 3]) * width / 2
-        #centers_height = (tr_boxes[:, 0] + tr_boxes[:, 2]) * height / 2
         centers_width = (tr_boxes[:, 1] + tr_boxes[:, 3]) / 2
         centers_height = (tr_boxes[:, 0] + tr_boxes[:, 2]) / 2
         depth_medians = self._median_depth_of_boxes(depth_frame_np, width,

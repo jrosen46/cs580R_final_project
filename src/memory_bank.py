@@ -17,9 +17,7 @@ from std_msgs.msg import String
 class MemoryBank(object):
     """External memory bank node."""
 
-    # TODO: have no idea about order of magnitude ... will depend on what layer
-    #       of the network we choose ... test it
-    TOLERANCE = 1e-2
+    TOLERANCE = 1.  # TODO: test out exact magnitude here
 
     def __init__(self):
 
@@ -33,7 +31,9 @@ class MemoryBank(object):
         self.pub = rospy.Publisher('mem_bank_explore', String, queue_size=10)
 
     def feat_vec_callback(self, feat_vecs):
-        """
+        """Compares incoming feature vectors to those that are in `mem_bank`.
+        Decides where to go because on euclidean distance. Adds these new
+        feature vectors to `mem_bank`.
         """
         feat_vecs = feat_vecs.data
 
@@ -64,7 +64,7 @@ class MemoryBank(object):
 
         Returns
         -------
-
+        l2 : numpy.array
         """
         l2 = np.sqrt(np.square(feat_vecs[:, np.newaxis]
                      - np.asarray(self.mem_bank)).sum(axis=2))

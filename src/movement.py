@@ -3,10 +3,6 @@
 """
 movement.py
 
-Based on this source:
-    https://jsk-recognition.readthedocs.io/en/latest/install_astra_camera.html
-I am going to assume that the field of view of the camera is 60 degrees.
-
 """
 import math
 import time
@@ -31,10 +27,9 @@ class Movement(object):
 
     def __init__(self):
 
-        print str(rospy.get_param_names())
-
-        # TARGET OBJECT FOR TESTING IS A PERSON B/C EASY TO RECOGNIZE
-        self.target_id = 1
+        # TODO: Add ability to set this with command line arguments
+        # taget object to find
+        self.target_id = 1      # 1 is the id for a person
 
         # whether to auto explore or not
         self.auto_explore_on = True
@@ -49,45 +44,43 @@ class Movement(object):
         self.ac = actionlib.SimpleActionClient('move_base', MoveBaseAction)
         self.ac.wait_for_server(rospy.Duration(5))
 
+        rospy.Subscriber('/odom', Odometry, self.set_approx_pose)
         rospy.Subscriber('processed_detections', numpy_msg(Floats),
                          self.detection_callback)
         rospy.Subscriber('mem_bank_explore', String,
                          self.mem_bank_callback)
-        rospy.Subscriber('/odom', Odometry, self.set_approx_pose)
-
-        # TODO: Also need to subscribe to a topic that is published from the
-        #       memory bank on whether or not to explore the room.
 
     def detection_callback(self, data):
         """Moves toward target object.
 
-        # TODO: https://answers.ros.org/question/203952/move_base-goals-in-base_link-for-turtlebot/
-        # first we query pose to get an idea of where the robot thinks it is ... then we add our
-        # goal to it ... this may work ... but also may not if the robot quickly changes its view
-        # on where it is right? 
+        Note
+        ----
+        FOV of astra camera is 60 degrees.
 
-        #http://www.theconstructsim.com/ros-qa-how-to-convert-quaternions-to-euler-angles/
+        TODO
+        ----
+        > explore this idea:
+            https://answers.ros.org/question/203952/move_base-goals-in-base_link-for-turtlebot/
+            http://www.theconstructsim.com/ros-qa-how-to-convert-quaternions-to-euler-angles/
+            first we query pose to get an idea of where the robot thinks it is;
+            then we add our goal to it ... this may work ... but also may not
+            if the robot quickly changes its view on where it is right? 
         """
         data = data.data.reshape(-1, 4)
-        print type(data)
 
         if self.target_id in set(data[:, 0]):
             self.auto_explore_on = False    # stop auto exploration
-            print 'turned auto_explore_off'
             bool_arr = (data[:, 0] == self.target_id)
             target_arr = np.squeeze(data[bool_arr, :])
             width_center, depth = target_arr[[1, 3]]
-            print 'width_center: ' + str(width_center)
-            print 'depth: ' + str(depth)
             deg_rotate = (.5 - width_center) * 60
             rad_rotate = abs(deg_rotate) * math.pi / 180.
-            print 'degree rotate: ' + str(deg_rotate)
 
-            # Two alternatives to movement ... currently actionlib not working
+            # Two alternatives to movement ... currently actionlib is not
+            # working well without a map, even if we use 'base_link'.
             if True:
                 if deg_rotate < 0.:
                     rad_rotate *= -1
-                #print 'radian rotate: ' + str(rad_rotate)
                 move_msg = Twist()
                 if depth > 0.4:
                     move_msg.linear.x = .2 * depth
@@ -98,15 +91,10 @@ class Movement(object):
                 y_movement_action_lib = depth*math.tan(rad_rotate)
                 if deg_rotate < 0.:
                     y_movement_action_lib *= -1
-                #print 'y_movement_action_lib: ' + str(y_movement_action_lib)
-                # TODO: actionlibrary currently not working ...
                 # gather last position and update
                 position = self.approx_last_pose.position
-                print 'position1: ' + str(position)
-
                 position.x += depth
                 position.y += y_movement_action_lib
-                print 'position2: ' + str(position)
 
                 # use last orientation
                 orient = self.approx_last_pose.orientation
@@ -128,12 +116,21 @@ class Movement(object):
     def mem_bank_callback(self, data):
         """
         """
-        pass
+        cmd = data.data
+        if cmd == "ALREADY EXPLORED":
+            # TODO: implement this
+            pass
+        elif cmd == "ENTER ROOM":
+            # TODO: implement this
+            pass
+        else:
+            raise ValueError("topic /mem_bank_explore not understood.")
         
-
     def _auto_explore(self):
         """
         """
+        # TODO: Need to integrate autonomous navigation package here. This is
+        #       just a placeholder for now.
         move_msg = Twist()
         move_msg.linear.x = .1
         move_msg.angular.z = .4

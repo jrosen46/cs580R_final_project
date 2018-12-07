@@ -16,3 +16,7 @@ Installion Requirements (this list is incomplete)
 `sudo apt-get install ros-kinetic-cv-bridge
 
 > need to install vision_msgs: https://github.com/Kukanani/vision_msgs
+
+> follow directions for installation of: https://github.com/RobustFieldAutonomyLab/turtlebot_exploration_3d
+
+> uses python2.7
